@@ -6,42 +6,101 @@ import java.util.UUID
 
 object MyApp extends zio.ZIOAppDefault {
 
-  case class Testname(uuid: UUID)
-  case class Databasename(name: String, connectionstring: String)
+  case class TestEnvironment(uuid: UUID)
+  case class Database(dbConfig: DbConfig, schema: String) {
+    val connectionString =
+      s"jdbc:postgresql://${dbConfig.user}:${dbConfig.password}@${dbConfig.host}:${dbConfig.port}/${dbConfig.dbName}"
+    val connectionStringWithSchema =
+      s"$connectionString?currentSchema=${schema}"
+  }
 
-  val myApp: ZIO[Console with RandomTestName, Nothing, Unit] = (
-    for {
-      testname <- RandomTestName.generateTestname
-      _ <- printLine(
-        s"Performing Test in fresh environment with name '$testname'"
-      )
-    } yield ()
-  ).orDie
+  def myTest(
+      testname: String,
+      cfg: DbConfig
+  ): ZIO[Console with RandomTestEnvironment with FreshDatabase, Nothing, Unit] =
+    (
+      for {
+        testEnvironmentName <- RandomTestEnvironment.generateTestEnvironmentName
+        db <- FreshDatabase.initializeDatabase(cfg)
+        _ <- printLine(s"Performing Test '$testname' in environment with name '$testEnvironmentName'")
+        _ <- printLine(s"  connectionString: ${db.connectionStringWithSchema}")
 
-  def run = mainEffect
+      } yield ()
+    ).orDie
 
-  val mainEffect: ZIO[Any, Nothing, Unit] =
-    myApp.provide(Random.live, Console.live, RandomTestNameLive.layer)
+  def run = {
+    val cfg = DbConfig("user", "password", "host", 5432, "dbName")
+    (myTest("Test1", cfg) *>
+      myTest("Test2", cfg)).provide(testLayer)
+  }
+
+  val testLayer: ZLayer[
+    Any,
+    Nothing,
+    Console with RandomTestEnvironment with FreshDatabase
+  ] =
+    Random.live >>> (Console.live >+> RandomTestEnvironmentLive.layer >+> FreshDatabaseLive.layer)
+}
+
+trait RandomTestEnvironment {
+  def generateTestEnvironmentName: UIO[MyApp.TestEnvironment]
+}
+
+object RandomTestEnvironment {
+  def generateTestEnvironmentName: URIO[RandomTestEnvironment, MyApp.TestEnvironment] =
+    ZIO.serviceWithZIO[RandomTestEnvironment](_.generateTestEnvironmentName)
 
 }
 
-trait RandomTestName {
-  def generateTestname: UIO[MyApp.Testname]
+case class RandomTestEnvironmentLive(random: Random) extends RandomTestEnvironment {
+  override def generateTestEnvironmentName: UIO[MyApp.TestEnvironment] =
+    random.nextUUID.map(MyApp.TestEnvironment)
 }
 
-object RandomTestName {
-  def generateTestname: URIO[RandomTestName, MyApp.Testname] =
-    ZIO.serviceWithZIO[RandomTestName](_.generateTestname)
-
+object RandomTestEnvironmentLive {
+  val layer: URLayer[Random, RandomTestEnvironment] =
+    (RandomTestEnvironmentLive(_)).toLayer[RandomTestEnvironment]
 }
 
-case class RandomTestNameLive(random: Random) extends RandomTestName {
-  override def generateTestname: UIO[MyApp.Testname] =
-    random.nextUUID.map(MyApp.Testname)
+case class DbConfig(
+    user: String,
+    password: String,
+    host: String,
+    port: Int,
+    dbName: String
+)
+
+trait FreshDatabase {
+  def initializeDatabase(
+      dbConfig: DbConfig
+  ): RIO[Console with RandomTestEnvironment, MyApp.Database]
 }
 
-object RandomTestNameLive {
-  val layer: URLayer[Random, RandomTestName] =
-    (RandomTestNameLive(_)).toLayer[RandomTestName]
+object FreshDatabase {
+  def initializeDatabase(cfg: DbConfig) =
+    ZIO.serviceWithZIO[FreshDatabase](_.initializeDatabase(cfg))
+}
 
+case class FreshDatabaseLive(testEnvironment: RandomTestEnvironment) extends FreshDatabase {
+  override def initializeDatabase(
+      dbConfig: DbConfig
+  ): RIO[Console with RandomTestEnvironment, MyApp.Database] = {
+
+    RandomTestEnvironment.generateTestEnvironmentName.flatMap { testenv =>
+      val schemaname = testenv.uuid.toString().replace("-", "_")
+      val database = MyApp.Database(dbConfig, schemaname)
+
+      for {
+        _ <- printLine(s"   Creating schema for testenvironment ${testenv.uuid}")
+        _ <- printLine(s"   created schema '$schemaname'")
+        _ <- printLine(s"   connectionstring: '${database.connectionStringWithSchema}'")
+        _ <- printLine(s"   performing flyway migrations...")
+      } yield database
+    }
+  }
+}
+
+object FreshDatabaseLive {
+  val layer: URLayer[RandomTestEnvironment, FreshDatabase] =
+    (FreshDatabaseLive(_)).toLayer[FreshDatabase]
 }
