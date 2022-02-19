@@ -34,11 +34,7 @@ object MyApp extends zio.ZIOAppDefault {
       myTest("Test2", cfg)).provide(testLayer)
   }
 
-  val testLayer: ZLayer[
-    Any,
-    Nothing,
-    Console with RandomTestEnvironment with FreshDatabase
-  ] =
+  val testLayer: ZLayer[Any, Nothing, Console with RandomTestEnvironment with FreshDatabase] =
     Random.live >>> (Console.live >+> RandomTestEnvironmentLive.layer >+> FreshDatabaseLive.layer)
 }
 
@@ -94,7 +90,7 @@ case class FreshDatabaseLive(testEnvironment: RandomTestEnvironment) extends Fre
         _ <- printLine(s"   Creating schema for testenvironment ${testenv.uuid}")
         _ <- printLine(s"   created schema '$schemaname'")
         _ <- printLine(s"   connectionstring: '${database.connectionStringWithSchema}'")
-        _ <- printLine(s"   performing flyway migrations...")
+        _ <- printLine(s"   performing flyway migrations for schema $schemaname...")
       } yield database
     }
   }
