@@ -1,3 +1,5 @@
+package de.flwi.envtest.zio
+
 import BusinessLogic.getResult
 import zio._
 import zio.Console._
@@ -44,7 +46,7 @@ object BusinessLogic {
   def getResult: RIO[BusinessLogic, Int] = ZIO.serviceWithZIO(_.getResult)
 }
 
-object MyApp extends zio.ZIOAppDefault {
+object MainZIO extends zio.ZIOAppDefault {
 
   def myApp: ZIO[BusinessLogic, Throwable, Int] = for {
     res <- getResult

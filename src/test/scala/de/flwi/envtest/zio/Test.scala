@@ -1,9 +1,11 @@
+package de.flwi.envtest.zio
+
 import zio._
 import zio.test._
 
 import java.util.UUID
 
-object MySpec extends DefaultRunnableSpec {
+object Test extends DefaultRunnableSpec {
   val testLayer: ZLayer[Any, Nothing, BusinessLogic] =
     Random.live >>> TestEnvironment.random >>> (Console.live >+> TestDatabaseEnvironment.testDbLayer >+> TestDockerEnvironment.testDockerLayer >>> BusinessLogic.live)
 
