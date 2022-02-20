@@ -3,15 +3,7 @@ import zio._
 import zio.Console._
 import zio.internal.stacktracer.Tracer
 
-case class DbConfig(
-    user: String,
-    password: String,
-    host: String,
-    port: Int,
-    dbName: String
-)
-
-case class Database(
+case class DatabaseConfig(
     user: String,
     password: String,
     host: String,
@@ -25,6 +17,8 @@ case class Database(
     s"$connectionString?currentSchema=$schema"
 }
 
+case class DockerConfig(host: String, port: Int, topicName: String)
+
 trait BusinessLogic {
   def getResult: UIO[Int]
 }
@@ -35,18 +29,19 @@ object BusinessLogic {
   val any: ZLayer[BusinessLogic, Nothing, BusinessLogic] =
     ZLayer.service[BusinessLogic](Tag[BusinessLogic], Tracer.newTrace)
 
-  val live: URLayer[Console with Database, BusinessLogic] = {
-    (BusinessLogicLive(_, _)).toLayer[BusinessLogic]
+  val live: URLayer[Console with DatabaseConfig with DockerConfig, BusinessLogic] = {
+    (BusinessLogicLive(_, _, _)).toLayer[BusinessLogic]
   }
 
-  case class BusinessLogicLive(console: Console, database: Database) extends BusinessLogic {
+  case class BusinessLogicLive(console: Console, database: DatabaseConfig, docker: DockerConfig) extends BusinessLogic {
     override def getResult: UIO[Int] = {
-      console.printLine(s"executing SELECT count(*) from ${database.schema}.myTable").orDie.as(42)
+
+      console.printLine(s"consuming from topic ${docker.topicName}").orDie *>
+        console.printLine(s"executing INSERT into ${database.schema}.myTable").orDie.as(42)
     }
   }
 
   def getResult: RIO[BusinessLogic, Int] = ZIO.serviceWithZIO(_.getResult)
-
 }
 
 object MyApp extends zio.ZIOAppDefault {
@@ -55,8 +50,8 @@ object MyApp extends zio.ZIOAppDefault {
     res <- getResult
   } yield res
 
-  val dbLayer: ULayer[Database] = ZLayer.succeed(
-    Database(
+  val dbLayer: ULayer[DatabaseConfig] = ZLayer.succeed(
+    DatabaseConfig(
       user = "user-from-cfg-file",
       password = "password-from-cfg-file",
       host = "host-from-cfg-file",
@@ -66,7 +61,16 @@ object MyApp extends zio.ZIOAppDefault {
     )
   )
 
-  val mainLayer: ZLayer[Any, Nothing, BusinessLogic] = Console.live ++ dbLayer >>> BusinessLogic.live
+  val dockerLayer: ULayer[DockerConfig] = ZLayer.succeed(
+    DockerConfig(
+      host = "host-from-cfg-file",
+      port = 9092,
+      topicName = "kafka-topic-from-cfg-file"
+    )
+  )
+
+  val mainLayer: ZLayer[Any, Nothing, BusinessLogic] =
+    Console.live ++ dbLayer ++ dockerLayer >>> BusinessLogic.live
 
   override def run: ZIO[ZEnv with ZIOAppArgs, Any, Any] = for {
     res <- myApp.provide(mainLayer)
