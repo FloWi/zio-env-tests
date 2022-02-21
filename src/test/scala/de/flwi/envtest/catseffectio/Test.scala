@@ -7,17 +7,29 @@ import java.util.UUID
 
 object Helper {}
 
-object Test extends SimpleIOSuite {
+trait MySuite extends SimpleIOSuite {
 
-  override def sharedResource: Resource[IO, Unit] = super.sharedResource
+  type PerTestRes
+  def perTestResource: Resource[IO, PerTestRes]
 
-  test("hello side effects") {
-    TestEnvironment.testResource.use(BusinessLogic.getResult).map(res => expect(res == 42))
+  def myTest(testName: TestName)(run: (PerTestRes, Log[IO]) => IO[Expectations]): Unit =
+    test(testName)((_, log) => perTestResource.use(run(_, log)))
+}
+
+object Test extends MySuite {
+
+  myTest("hello side effects") { (env, _) =>
+    BusinessLogic.getResult(env).map(res => expect(res == 42))
   }
 
-  test("hello side effects 2") {
-    TestEnvironment.testResource.use(BusinessLogic.getResult).map(res => expect(res == 42))
+  myTest("hello side effects 2") { (env, _) =>
+    BusinessLogic.getResult(env).map(res => expect(res == 42))
   }
+
+  override type PerTestRes = BusinessLogicConfig
+
+  override def perTestResource: Resource[IO, Test.PerTestRes] = TestEnvironment.testResource
+
 }
 
 case class TestEnvironment(uuid: UUID)
