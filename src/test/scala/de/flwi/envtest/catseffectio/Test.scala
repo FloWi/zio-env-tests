@@ -5,8 +5,6 @@ import weaver._
 
 import java.util.UUID
 
-object Helper {}
-
 trait MySuite extends SimpleIOSuite {
 
   type PerTestRes
@@ -28,20 +26,20 @@ object Test extends MySuite {
 
   override type PerTestRes = BusinessLogicConfig
 
-  override def perTestResource: Resource[IO, Test.PerTestRes] = TestEnvironment.testResource
+  override def perTestResource: Resource[IO, Test.PerTestRes] = TestId.testEnvironmentResource
 
 }
 
-case class TestEnvironment(uuid: UUID)
+case class TestId(uuid: UUID)
 
-object TestEnvironment {
+object TestId {
 
-  val testEnvResource: Resource[IO, TestEnvironment] = Resource.eval(IO(TestEnvironment(UUID.randomUUID())))
+  val testIdResource: Resource[IO, TestId] = Resource.eval(IO(println("generating random test id")) *> IO(TestId(UUID.randomUUID())))
 
-  val dockerResource: TestEnvironment => Resource[IO, DockerConfig] = env =>
+  val kafkaResource: TestId => Resource[IO, KafkaConfig] = env =>
     Resource
       .pure(
-        DockerConfig(
+        KafkaConfig(
           host = "host",
           port = 9092,
           topicName = env.uuid.toString.replace("-", "_")
@@ -49,14 +47,10 @@ object TestEnvironment {
       )
       .evalTap(createTopic)
 
-  def createTestSchema(database: DatabaseConfig): IO[Unit] = IO {
-    println(s"creating schema ${database.schema}")
-  }
+  def createTopic(kafkaConfig: KafkaConfig): IO[Unit] =
+    IO(println(s"creating topic ${kafkaConfig.topicName}"))
 
-  def createTopic(dockerConfig: DockerConfig): IO[Unit] =
-    IO(println(s"creating topic ${dockerConfig.topicName}"))
-
-  val dbResource: TestEnvironment => Resource[IO, DatabaseConfig] = env =>
+  val dbResource: TestId => Resource[IO, DatabaseConfig] = env =>
     Resource
       .pure(
         DatabaseConfig(
@@ -70,10 +64,13 @@ object TestEnvironment {
       )
       .evalTap(createTestSchema)
 
-  val testResource: Resource[IO, BusinessLogicConfig] = for {
-    env <- testEnvResource
-    db <- dbResource(env)
-    docker <- dockerResource(env)
-  } yield BusinessLogicConfig(db, docker)
+  def createTestSchema(database: DatabaseConfig): IO[Unit] = IO {
+    println(s"creating schema ${database.schema}")
+  }
 
+  val testEnvironmentResource: Resource[IO, BusinessLogicConfig] = for {
+    env <- testIdResource
+    db <- dbResource(env)
+    kafka <- kafkaResource(env)
+  } yield BusinessLogicConfig(db, kafka)
 }

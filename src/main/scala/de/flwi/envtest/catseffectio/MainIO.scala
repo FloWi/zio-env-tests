@@ -16,7 +16,7 @@ case class DatabaseConfig(
     s"$connectionString?currentSchema=$schema"
 }
 
-case class DockerConfig(host: String, port: Int, topicName: String)
+case class KafkaConfig(host: String, port: Int, topicName: String)
 
 object BusinessLogic {
 
@@ -31,7 +31,7 @@ object BusinessLogic {
   // i need BL, but s.o. has to provide it - I don't care, when that happens
 
 }
-case class BusinessLogicConfig(database: DatabaseConfig, docker: DockerConfig)
+case class BusinessLogicConfig(database: DatabaseConfig, docker: KafkaConfig)
 
 object MainIO extends IOApp {
 
@@ -46,8 +46,8 @@ object MainIO extends IOApp {
     )
   )
 
-  val dockerResource: Resource[IO, DockerConfig] = Resource.pure(
-    DockerConfig(
+  val dockerResource: Resource[IO, KafkaConfig] = Resource.pure(
+    KafkaConfig(
       host = "host-from-cfg-file",
       port = 9092,
       topicName = "kafka-topic-from-cfg-file"
